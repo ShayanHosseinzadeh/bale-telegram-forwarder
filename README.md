@@ -11,6 +11,13 @@ Options for deployment:
 - Cloud platforms like AWS, Google Cloud, or Azure
 - Using a VPN or proxy on a local machine (less reliable for production)
 
+## Branches
+
+This repository has two main branches:
+
+1. **main** - Contains the command-line version of the application (this branch)
+2. **gui-version** - Contains the GUI version with CustomTkinter interface 
+
 ## Prerequisites
 
 1. Python 3.9 or higher
@@ -80,16 +87,13 @@ Options for deployment:
 
 ## Usage
 
-Run the application:
+### GUI Version
+Run the GUI application:
 ```
-python forwarder.py
+python start_gui.py
 ```
 
-Or use the provided scripts:
-- On Windows: Run `start.bat`
-- On Linux/Mac: Run `start.sh`
-
-The application will start listening for messages in Bale and forward them to your Telegram channel.
+The GUI version provides a user-friendly interface for configuring and controlling the forwarder.
 
 ## Supported Message Types
 
