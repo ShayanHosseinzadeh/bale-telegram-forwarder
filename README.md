@@ -11,6 +11,13 @@ Options for deployment:
 - Cloud platforms like AWS, Google Cloud, or Azure
 - Using a VPN or proxy on a local machine (less reliable for production)
 
+## Branches
+
+This repository has two main branches:
+
+1. **main** - Contains the command-line version of the application
+2. **gui-version** - Contains the GUI version with CustomTkinter interface (this branch)
+
 ## Prerequisites
 
 1. Python 3.9 or higher
@@ -79,16 +86,6 @@ Options for deployment:
    ```
 
 ## Usage
-
-### Command Line Version
-Run the application:
-```
-python forwarder.py
-```
-
-Or use the provided scripts:
-- On Windows: Run `start.bat`
-- On Linux/Mac: Run `start.sh`
 
 ### GUI Version
 Run the GUI application:
