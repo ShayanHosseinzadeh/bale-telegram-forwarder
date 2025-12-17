@@ -80,6 +80,7 @@ Options for deployment:
 
 ## Usage
 
+### Command Line Version
 Run the application:
 ```
 python forwarder.py
@@ -89,7 +90,13 @@ Or use the provided scripts:
 - On Windows: Run `start.bat`
 - On Linux/Mac: Run `start.sh`
 
-The application will start listening for messages in Bale and forward them to your Telegram channel.
+### GUI Version
+Run the GUI application:
+```
+python start_gui.py
+```
+
+The GUI version provides a user-friendly interface for configuring and controlling the forwarder.
 
 ## Supported Message Types
 
