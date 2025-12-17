@@ -5,7 +5,10 @@ import asyncio
 import queue
 import logging
 import os
+import requests
+import io
 from dotenv import load_dotenv
+from telegram import Bot
 
 # Load environment variables from .env file if it exists
 load_dotenv()
@@ -26,6 +29,7 @@ class BaleTelegramForwarderGUI:
         # Forwarder state
         self.is_running = False
         self.forwarder_thread = None
+        self.last_update_id = 0
         
     def setup_logging(self):
         """Setup logging to display in the GUI"""
@@ -167,24 +171,246 @@ class BaleTelegramForwarderGUI:
             self.logger.error(f"Failed to save configuration: {str(e)}")
             messagebox.showerror("Error", f"Failed to save configuration: {str(e)}")
             
+    def get_bale_updates(self, bale_token):
+        """Get updates from Bale"""
+        try:
+            bale_api_url = f"https://tapi.bale.ai/bot{bale_token}"
+            response = requests.get(f"{bale_api_url}/getUpdates", params={"offset": self.last_update_id + 1})
+            if response.status_code == 200:
+                return response.json()
+            else:
+                self.logger.error(f"Failed to get Bale updates: {response.status_code} - {response.text}")
+                return None
+        except Exception as e:
+            self.logger.error(f"Error getting Bale updates: {str(e)}")
+            return None
+
+    def download_bale_file(self, file_id, bale_token):
+        """Download a file from Bale"""
+        try:
+            bale_api_url = f"https://tapi.bale.ai/bot{bale_token}"
+            # First, get file information
+            file_response = requests.get(f"{bale_api_url}/getFile", params={"file_id": file_id})
+            if file_response.status_code != 200:
+                self.logger.error(f"Failed to get file info from Bale: {file_response.status_code} - {file_response.text}")
+                return None
+                
+            file_data = file_response.json()
+            if not file_data.get("ok"):
+                self.logger.error(f"Failed to get file info from Bale: {file_data}")
+                return None
+                
+            file_path = file_data["result"]["file_path"]
+            
+            # Download the file content
+            file_url = f"https://tapi.bale.ai/file/bot{bale_token}/{file_path}"
+            file_response = requests.get(file_url)
+            if file_response.status_code != 200:
+                self.logger.error(f"Failed to download file from Bale: {file_response.status_code} - {file_response.text}")
+                return None
+                
+            return file_response.content
+        except Exception as e:
+            self.logger.error(f"Error downloading file from Bale: {str(e)}")
+            return None
+
+    async def forward_to_telegram(self, message, telegram_token, channel_id):
+        """Forward a message from Bale to Telegram channel"""
+        try:
+            self.logger.info(f"Attempting to forward message to Telegram channel: {channel_id}")
+            
+            # Create Telegram bot instance
+            telegram_bot = Bot(token=telegram_token)
+            
+            # Handle different message types
+            if "text" in message:
+                # Forward text messages
+                self.logger.info(f"Sending text message: {message['text']}")
+                result = await telegram_bot.send_message(
+                    chat_id=channel_id,
+                    text=message['text']
+                )
+                self.logger.info(f"Message sent successfully. Result: {result}")
+            elif "photo" in message:
+                # Forward photo messages
+                self.logger.info("Photo message received")
+                # Get the largest photo
+                photo_sizes = message["photo"]
+                largest_photo = max(photo_sizes, key=lambda x: x["file_size"] if "file_size" in x else x["width"] * x["height"])
+                file_id = largest_photo["file_id"]
+                
+                # Download the photo from Bale
+                photo_content = self.download_bale_file(file_id, self.bale_token_var.get())
+                if photo_content:
+                    # Send the photo to Telegram
+                    result = await telegram_bot.send_photo(
+                        chat_id=channel_id,
+                        photo=io.BytesIO(photo_content),
+                        caption=message.get('caption', '')
+                    )
+                    self.logger.info(f"Photo sent successfully. Result: {result}")
+                else:
+                    # Fallback to text message if download failed
+                    result = await telegram_bot.send_message(
+                        chat_id=channel_id,
+                        text="Photo message received (failed to forward media)"
+                    )
+                    self.logger.info(f"Fallback message sent. Result: {result}")
+            elif "document" in message:
+                # Forward document messages
+                self.logger.info("Document message received")
+                file_id = message["document"]["file_id"]
+                
+                # Download the document from Bale
+                doc_content = self.download_bale_file(file_id, self.bale_token_var.get())
+                if doc_content:
+                    # Send the document to Telegram
+                    filename = message["document"].get("file_name", "document")
+                    result = await telegram_bot.send_document(
+                        chat_id=channel_id,
+                        document=io.BytesIO(doc_content),
+                        filename=filename,
+                        caption=message.get('caption', '')
+                    )
+                    self.logger.info(f"Document sent successfully. Result: {result}")
+                else:
+                    # Fallback to text message if download failed
+                    result = await telegram_bot.send_message(
+                        chat_id=channel_id,
+                        text="Document message received (failed to forward media)"
+                    )
+                    self.logger.info(f"Fallback message sent. Result: {result}")
+            elif "voice" in message:
+                # Forward voice messages
+                self.logger.info("Voice message received")
+                file_id = message["voice"]["file_id"]
+                
+                # Download the voice message from Bale
+                voice_content = self.download_bale_file(file_id, self.bale_token_var.get())
+                if voice_content:
+                    # Send the voice message to Telegram
+                    result = await telegram_bot.send_voice(
+                        chat_id=channel_id,
+                        voice=io.BytesIO(voice_content),
+                        caption=message.get('caption', '')
+                    )
+                    self.logger.info(f"Voice message sent successfully. Result: {result}")
+                else:
+                    # Fallback to text message if download failed
+                    result = await telegram_bot.send_message(
+                        chat_id=channel_id,
+                        text="Voice message received (failed to forward media)"
+                    )
+                    self.logger.info(f"Fallback message sent. Result: {result}")
+            elif "video" in message:
+                # Forward video messages
+                self.logger.info("Video message received")
+                file_id = message["video"]["file_id"]
+                
+                # Download the video from Bale
+                video_content = self.download_bale_file(file_id, self.bale_token_var.get())
+                if video_content:
+                    # Send the video to Telegram
+                    result = await telegram_bot.send_video(
+                        chat_id=channel_id,
+                        video=io.BytesIO(video_content),
+                        caption=message.get('caption', '')
+                    )
+                    self.logger.info(f"Video sent successfully. Result: {result}")
+                else:
+                    # Fallback to text message if download failed
+                    result = await telegram_bot.send_message(
+                        chat_id=channel_id,
+                        text="Video message received (failed to forward media)"
+                    )
+                    self.logger.info(f"Fallback message sent. Result: {result}")
+            elif "audio" in message:
+                # Forward audio messages
+                self.logger.info("Audio message received")
+                file_id = message["audio"]["file_id"]
+                
+                # Download the audio from Bale
+                audio_content = self.download_bale_file(file_id, self.bale_token_var.get())
+                if audio_content:
+                    # Send the audio to Telegram
+                    result = await telegram_bot.send_audio(
+                        chat_id=channel_id,
+                        audio=io.BytesIO(audio_content),
+                        caption=message.get('caption', '')
+                    )
+                    self.logger.info(f"Audio sent successfully. Result: {result}")
+                else:
+                    # Fallback to text message if download failed
+                    result = await telegram_bot.send_message(
+                        chat_id=channel_id,
+                        text="Audio message received (failed to forward media)"
+                    )
+                    self.logger.info(f"Fallback message sent. Result: {result}")
+            else:
+                # Forward unsupported message types as text
+                self.logger.info("Unsupported message type received")
+                result = await telegram_bot.send_message(
+                    chat_id=channel_id,
+                    text="Received an unsupported message type"
+                )
+                self.logger.info(f"Message sent successfully. Result: {result}")
+            
+            self.logger.info(f"Message forwarded successfully from Bale to Telegram")
+        except Exception as e:
+            self.logger.error(f"Error forwarding message to Telegram: {str(e)}")
+
+    def process_bale_updates(self, bale_token, telegram_token, channel_id):
+        """Process updates from Bale"""
+        updates = self.get_bale_updates(bale_token)
+        
+        if updates and "result" in updates:
+            self.logger.info(f"Received {len(updates['result'])} updates from Bale")
+            for update in updates["result"]:
+                if "update_id" in update:
+                    self.last_update_id = max(self.last_update_id, update["update_id"])
+                    
+                if "message" in update:
+                    message = update["message"]
+                    self.logger.info(f"Processing message from Bale: {message.get('text', 'Media message')}")
+                    # Run the async function
+                    asyncio.run(self.forward_to_telegram(message, telegram_token, channel_id))
+        elif updates:
+            self.logger.info("No new updates from Bale")
+        else:
+            self.logger.info("Failed to get updates from Bale")
+
     def run_forwarder(self):
         """Run the forwarder logic in a separate thread"""
         try:
-            # This is where you would integrate the actual forwarder logic
-            # For now, we'll just simulate the process
-            import time
-            counter = 0
-            while self.is_running:
-                time.sleep(2)
-                counter += 1
-                self.logger.info(f"Checking for messages... (Check #{counter})")
+            # Get tokens and channel ID
+            bale_token = self.bale_token_var.get()
+            telegram_token = self.telegram_token_var.get()
+            channel_id = self.channel_id_var.get()
+            
+            # Validate tokens
+            if not bale_token or not telegram_token or not channel_id:
+                self.logger.error("Missing required configuration")
+                self.stop_forwarder()
+                return
                 
-                # Simulate message processing
-                if counter % 5 == 0:
-                    self.logger.info("No new messages from Bale")
+            self.logger.info("Forwarder started successfully")
+            
+            # Main loop
+            while self.is_running:
+                try:
+                    self.process_bale_updates(bale_token, telegram_token, channel_id)
+                    # Wait before polling again
+                    import time
+                    time.sleep(2)
+                except Exception as e:
+                    self.logger.error(f"Error in forwarder loop: {str(e)}")
+                    import time
+                    time.sleep(5)  # Wait longer on error
                     
         except Exception as e:
             self.logger.error(f"Forwarder error: {str(e)}")
+        finally:
+            self.logger.info("Forwarder thread stopped")
             
     def check_log_queue(self):
         """Check for new log messages and display them"""
