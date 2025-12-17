@@ -3,6 +3,7 @@ import time
 import logging
 import requests
 import os
+import io
 from dotenv import load_dotenv
 from telegram import Bot
 
@@ -50,6 +51,34 @@ def get_bale_updates():
         logger.error(f"Error getting Bale updates: {str(e)}")
         return None
 
+def download_bale_file(file_id):
+    """Download a file from Bale"""
+    try:
+        # First, get file information
+        file_response = requests.get(f"{BALE_API_URL}/getFile", params={"file_id": file_id})
+        if file_response.status_code != 200:
+            logger.error(f"Failed to get file info from Bale: {file_response.status_code} - {file_response.text}")
+            return None
+            
+        file_data = file_response.json()
+        if not file_data.get("ok"):
+            logger.error(f"Failed to get file info from Bale: {file_data}")
+            return None
+            
+        file_path = file_data["result"]["file_path"]
+        
+        # Download the file content
+        file_url = f"https://tapi.bale.ai/file/bot{BALE_BOT_TOKEN}/{file_path}"
+        file_response = requests.get(file_url)
+        if file_response.status_code != 200:
+            logger.error(f"Failed to download file from Bale: {file_response.status_code} - {file_response.text}")
+            return None
+            
+        return file_response.content
+    except Exception as e:
+        logger.error(f"Error downloading file from Bale: {str(e)}")
+        return None
+
 async def forward_to_telegram(message):
     """Forward a message from Bale to Telegram channel"""
     try:
@@ -61,55 +90,130 @@ async def forward_to_telegram(message):
             logger.info(f"Sending text message: {message['text']}")
             result = await telegram_bot.send_message(
                 chat_id=TELEGRAM_CHANNEL_ID,
-                text=f"From Bale: {message['text']}"
+                text=message['text']
             )
             logger.info(f"Message sent successfully. Result: {result}")
         elif "photo" in message:
             # Forward photo messages
             logger.info("Photo message received")
-            result = await telegram_bot.send_message(
-                chat_id=TELEGRAM_CHANNEL_ID,
-                text=f"From Bale: Photo message received (media forwarding not implemented in this example)"
-            )
-            logger.info(f"Message sent successfully. Result: {result}")
+            # Get the largest photo
+            photo_sizes = message["photo"]
+            largest_photo = max(photo_sizes, key=lambda x: x["file_size"] if "file_size" in x else x["width"] * x["height"])
+            file_id = largest_photo["file_id"]
+            
+            # Download the photo from Bale
+            photo_content = download_bale_file(file_id)
+            if photo_content:
+                # Send the photo to Telegram
+                result = await telegram_bot.send_photo(
+                    chat_id=TELEGRAM_CHANNEL_ID,
+                    photo=io.BytesIO(photo_content),
+                    caption=message.get('caption', '')
+                )
+                logger.info(f"Photo sent successfully. Result: {result}")
+            else:
+                # Fallback to text message if download failed
+                result = await telegram_bot.send_message(
+                    chat_id=TELEGRAM_CHANNEL_ID,
+                    text="Photo message received (failed to forward media)"
+                )
+                logger.info(f"Fallback message sent. Result: {result}")
         elif "document" in message:
             # Forward document messages
             logger.info("Document message received")
-            result = await telegram_bot.send_message(
-                chat_id=TELEGRAM_CHANNEL_ID,
-                text=f"From Bale: Document message received (media forwarding not implemented in this example)"
-            )
-            logger.info(f"Message sent successfully. Result: {result}")
+            file_id = message["document"]["file_id"]
+            
+            # Download the document from Bale
+            doc_content = download_bale_file(file_id)
+            if doc_content:
+                # Send the document to Telegram
+                filename = message["document"].get("file_name", "document")
+                result = await telegram_bot.send_document(
+                    chat_id=TELEGRAM_CHANNEL_ID,
+                    document=io.BytesIO(doc_content),
+                    filename=filename,
+                    caption=message.get('caption', '')
+                )
+                logger.info(f"Document sent successfully. Result: {result}")
+            else:
+                # Fallback to text message if download failed
+                result = await telegram_bot.send_message(
+                    chat_id=TELEGRAM_CHANNEL_ID,
+                    text="Document message received (failed to forward media)"
+                )
+                logger.info(f"Fallback message sent. Result: {result}")
         elif "voice" in message:
             # Forward voice messages
             logger.info("Voice message received")
-            result = await telegram_bot.send_message(
-                chat_id=TELEGRAM_CHANNEL_ID,
-                text=f"From Bale: Voice message received (media forwarding not implemented in this example)"
-            )
-            logger.info(f"Message sent successfully. Result: {result}")
+            file_id = message["voice"]["file_id"]
+            
+            # Download the voice message from Bale
+            voice_content = download_bale_file(file_id)
+            if voice_content:
+                # Send the voice message to Telegram
+                result = await telegram_bot.send_voice(
+                    chat_id=TELEGRAM_CHANNEL_ID,
+                    voice=io.BytesIO(voice_content),
+                    caption=message.get('caption', '')
+                )
+                logger.info(f"Voice message sent successfully. Result: {result}")
+            else:
+                # Fallback to text message if download failed
+                result = await telegram_bot.send_message(
+                    chat_id=TELEGRAM_CHANNEL_ID,
+                    text="Voice message received (failed to forward media)"
+                )
+                logger.info(f"Fallback message sent. Result: {result}")
         elif "video" in message:
             # Forward video messages
             logger.info("Video message received")
-            result = await telegram_bot.send_message(
-                chat_id=TELEGRAM_CHANNEL_ID,
-                text=f"From Bale: Video message received (media forwarding not implemented in this example)"
-            )
-            logger.info(f"Message sent successfully. Result: {result}")
+            file_id = message["video"]["file_id"]
+            
+            # Download the video from Bale
+            video_content = download_bale_file(file_id)
+            if video_content:
+                # Send the video to Telegram
+                result = await telegram_bot.send_video(
+                    chat_id=TELEGRAM_CHANNEL_ID,
+                    video=io.BytesIO(video_content),
+                    caption=message.get('caption', '')
+                )
+                logger.info(f"Video sent successfully. Result: {result}")
+            else:
+                # Fallback to text message if download failed
+                result = await telegram_bot.send_message(
+                    chat_id=TELEGRAM_CHANNEL_ID,
+                    text="Video message received (failed to forward media)"
+                )
+                logger.info(f"Fallback message sent. Result: {result}")
         elif "audio" in message:
             # Forward audio messages
             logger.info("Audio message received")
-            result = await telegram_bot.send_message(
-                chat_id=TELEGRAM_CHANNEL_ID,
-                text=f"From Bale: Audio message received (media forwarding not implemented in this example)"
-            )
-            logger.info(f"Message sent successfully. Result: {result}")
+            file_id = message["audio"]["file_id"]
+            
+            # Download the audio from Bale
+            audio_content = download_bale_file(file_id)
+            if audio_content:
+                # Send the audio to Telegram
+                result = await telegram_bot.send_audio(
+                    chat_id=TELEGRAM_CHANNEL_ID,
+                    audio=io.BytesIO(audio_content),
+                    caption=message.get('caption', '')
+                )
+                logger.info(f"Audio sent successfully. Result: {result}")
+            else:
+                # Fallback to text message if download failed
+                result = await telegram_bot.send_message(
+                    chat_id=TELEGRAM_CHANNEL_ID,
+                    text="Audio message received (failed to forward media)"
+                )
+                logger.info(f"Fallback message sent. Result: {result}")
         else:
             # Forward unsupported message types as text
             logger.info("Unsupported message type received")
             result = await telegram_bot.send_message(
                 chat_id=TELEGRAM_CHANNEL_ID,
-                text=f"From Bale: Received an unsupported message type"
+                text="Received an unsupported message type"
             )
             logger.info(f"Message sent successfully. Result: {result}")
         

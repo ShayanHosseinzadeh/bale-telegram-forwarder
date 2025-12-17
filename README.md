@@ -93,11 +93,16 @@ The application will start listening for messages in Bale and forward them to yo
 
 ## Supported Message Types
 
-Currently, this application only supports forwarding text messages from Bale to Telegram. Media messages (photos, documents, voice, videos, audio) are acknowledged but not forwarded with their content.
+This application now supports forwarding all message types from Bale to Telegram:
 
-For media messages, the application will send a notification to your Telegram channel indicating that a media message was received but not forwarded.
+- Text messages
+- Photos (sends the largest available size)
+- Documents
+- Voice messages
+- Videos
+- Audio files
 
-Future versions may include full media forwarding capabilities.
+All media messages will be downloaded from Bale and re-uploaded to Telegram with their original captions preserved.
 
 ## Troubleshooting
 
